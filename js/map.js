@@ -161,8 +161,9 @@ function generateWaypoints(lat, lng, targetMinutes, idx, scaleFactor = 1.0, near
   // loop: 往路と復路で大きく角度を広げる(同じ道を通りにくくする)
   const spread = settings.loop ? 0.70 : 0.35;
 
-  const d1 = half * 0.50;
-  const d2 = half * 0.90;
+  // avoidBusy: 中継点を手前寄りに置いて生活道路を通りやすくする
+  const d1 = settings.avoidBusy ? half * 0.40 : half * 0.50;
+  const d2 = settings.avoidBusy ? half * 0.75 : half * 0.90;
   const a1 = angle - spread;
   const a2 = angle + spread;
 
@@ -173,22 +174,16 @@ function generateWaypoints(lat, lng, targetMinutes, idx, scaleFactor = 1.0, near
   ];
 }
 
-async async function fetchOSRMRoute(startLat, startLng, wps) {
+async function fetchOSRMRoute(startLat, startLng, wps) {
   const coords = [
     `${startLng},${startLat}`,
     ...wps.map(w => `${w.lng},${w.lat}`),
     `${startLng},${startLat}`,
   ].join(';');
 
-  // 設定: 交通量の多い道を避ける
-  const settings = getSettings();
-  const excludeParam = settings.avoidBusy
-    ? '&exclude=motorway,trunk,primary'
-    : '';
-
   try {
     const r = await fetch(
-      `https://router.project-osrm.org/route/v1/foot/${coords}?overview=full&geometries=geojson${excludeParam}`
+      `https://router.project-osrm.org/route/v1/foot/${coords}?overview=full&geometries=geojson`
     );
     const d = await r.json();
     if (d.code === 'Ok' && d.routes?.length) {
