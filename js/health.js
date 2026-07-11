@@ -297,7 +297,7 @@ function renderDogEncounterHistory(logs) {
         ${items.map(enc => `
           <div class="dog-enc-item">
             <span>🐶</span>
-            <span class="dog-enc-breed">${enc.breed}</span>
+            <span class="dog-enc-breed">${escapeHtml(enc.breed)}</span>
             <span class="dog-enc-time">散歩終了 ${enc.time}</span>
           </div>
         `).join('')}

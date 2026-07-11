@@ -3,6 +3,18 @@
    全データの読み書きをここで管理
 ============================================================ */
 
+// ================================================================
+// XSS対策: ユーザー入力をinnerHTMLに入れる前に必ずこれを通す
+// ================================================================
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const DB = {
   SPOTS:   'wanpo_spots',
   LOGS:    'wanpo_logs',
@@ -15,7 +27,6 @@ function getSpots()    { return JSON.parse(localStorage.getItem(DB.SPOTS)    || 
 function saveSpots(d)  { localStorage.setItem(DB.SPOTS, JSON.stringify(d)); }
 
 function getLogs()     { return JSON.parse(localStorage.getItem(DB.LOGS)     || '[]'); }
-function saveLogs(d)   { localStorage.setItem(DB.LOGS, JSON.stringify(d)); }
 
 function getDogProfile()    { return JSON.parse(localStorage.getItem(DB.DOG) || '{}'); }
 function saveDogProfile_()  { /* alias for save below */ }
@@ -82,8 +93,8 @@ function updateFavRoutesUI() {
   listDiv.innerHTML = favs.map(r => `
     <div class="saved-spot fav-route-item" id="fav-${r.id}">
       <div class="saved-spot-info" onclick="startFavRoute(${r.id})" style="cursor:pointer;">
-        <div class="saved-spot-name">⭐ ${r.name}</div>
-        <div class="saved-spot-addr">${r.dist}km &nbsp;|&nbsp; 約${r.duration}分 &nbsp;|&nbsp; ${new Date(r.savedAt).toLocaleDateString('ja-JP')}</div>
+        <div class="saved-spot-name">⭐ ${escapeHtml(r.name)}</div>
+        <div class="saved-spot-addr">${escapeHtml(r.dist)}km &nbsp;|&nbsp; 約${escapeHtml(String(r.duration))}分 &nbsp;|&nbsp; ${new Date(r.savedAt).toLocaleDateString('ja-JP')}</div>
       </div>
       <button class="saved-spot-del" onclick="deleteFavRoute(${r.id})" title="削除">🗑️</button>
     </div>
@@ -122,7 +133,7 @@ function updateSpotsUI() {
     const prev = sel.value;
     sel.innerHTML = '<option value="">-- スポットを選んでください --</option>';
     spots.forEach(s => {
-      sel.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+      sel.innerHTML += `<option value="${s.id}">${escapeHtml(s.name)}</option>`;
     });
     if (prev) sel.value = prev;
     const hasSpot = !!sel.value;
@@ -141,8 +152,8 @@ function updateSpotsUI() {
   listDiv.innerHTML = spots.map(s => `
     <div class="saved-spot">
       <div class="saved-spot-info">
-        <div class="saved-spot-name">📍 ${s.name}</div>
-        ${s.address ? `<div class="saved-spot-addr">${s.address}</div>` : ''}
+        <div class="saved-spot-name">📍 ${escapeHtml(s.name)}</div>
+        ${s.address ? `<div class="saved-spot-addr">${escapeHtml(s.address)}</div>` : ''}
       </div>
       <button class="saved-spot-del" onclick="deleteSpot(${s.id})" title="削除">🗑️</button>
     </div>

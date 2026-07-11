@@ -114,7 +114,7 @@ function renderLog() {
             <span class="log-entry-tag">💧 ${log.toiletPee||0}回</span>
             <span class="log-entry-tag">💩 ${log.toiletPoo||0}回</span>
             ${log.wbgt ? `<span class="log-entry-tag">🌡️ WBGT ${log.wbgt}°</span>` : ''}
-            ${log.dogBreeds?.length ? `<span class="log-entry-tag">(${log.dogBreeds.join(', ')})</span>` : ''}
+            ${log.dogBreeds?.length ? `<span class="log-entry-tag">(${log.dogBreeds.map(b => escapeHtml(b)).join(', ')})</span>` : ''}
           </div>
         </div>
       </div>`;
