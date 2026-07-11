@@ -544,9 +544,17 @@ out body ${limit};`;
     .filter(s => s.lat && s.lng);
 
   generatedRoutes.forEach(route => {
-    route.spots = spots.filter(s =>
-      route.points.some(p => calcDistance(p[0], p[1], s.lat, s.lng) < 350)
-    ).slice(0, 5);
+    if (!route.points?.length) { route.spots = []; return; }
+    // ルートの中心座標を計算
+    const centerLat = route.points.reduce((s, p) => s + p[0], 0) / route.points.length;
+    const centerLng = route.points.reduce((s, p) => s + p[1], 0) / route.points.length;
+    route.spots = spots.filter(s => {
+      // ルート中心から半径(ルート距離の半分)以内、かつ経路点から500m以内
+      const distFromCenter = calcDistance(centerLat, centerLng, s.lat, s.lng);
+      const routeRadius = (parseFloat(route.dist) * 1000) / 2;
+      if (distFromCenter > routeRadius + 300) return false;
+      return route.points.some(p => calcDistance(p[0], p[1], s.lat, s.lng) < 500);
+    }).slice(0, 5);
   });
 
   renderRouteCards(startLoc, type, wdata);
