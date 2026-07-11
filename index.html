@@ -313,6 +313,14 @@ body.show-bg .bg-scene { opacity: 1; }
   box-shadow: 0 4px 16px rgba(231,76,60,0.4);
 }
 .btn-end:active { transform:scale(0.96); }
+.btn-end { position:relative; overflow:hidden; cursor:pointer; user-select:none; -webkit-user-select:none; }
+#btn-end-progress {
+  position:absolute; left:0; bottom:0; height:4px;
+  width:0%; background:rgba(255,255,255,0.7);
+  border-radius:0 0 var(--radius-sm) var(--radius-sm);
+  transition:none;
+}
+.btn-end.holding #btn-end-label::after { content:' (長押し中...)'; font-size:13px; font-weight:400; opacity:0.85; }
 
 /* ================================================================
    フローティングラベル Input(uiverse.io スタイル)
@@ -959,7 +967,12 @@ body.show-bg .bg-scene { opacity: 1; }
     <button class="btn-poo" onclick="markToilet('poo')">💩 うんち</button>
     <button class="btn btn-ghost" style="flex:1;padding:14px 8px;font-size:13px;" onclick="openDogModal()">🐶 すれ違い</button>
   </div>
-  <button class="btn-end mt8" onclick="endWalk()">⏹️ お散歩終了</button>
+  <button class="btn-end mt8" id="btn-end-walk"
+    ontouchstart="startEndHold(event)" ontouchend="cancelEndHold()"
+    onmousedown="startEndHold(event)" onmouseup="cancelEndHold()" onmouseleave="cancelEndHold()">
+    <span id="btn-end-label">⏹️ お散歩終了</span>
+    <div id="btn-end-progress"></div>
+  </button>
 
   <p class="section-title mt12">📍 ルート沿いの見どころ</p>
   <div class="card">

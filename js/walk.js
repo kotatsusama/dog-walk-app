@@ -200,8 +200,50 @@ function addDogEncounter() {
 // ================================================================
 // 散歩終了
 // ================================================================
-function endWalk() {
-  if (!confirm('お散歩を終了しますか?')) return;
+function // ================================================================
+// 散歩終了ボタン — 長押し防止 (500ms)
+// ================================================================
+let _endHoldTimer   = null;
+let _endHoldRaf     = null;
+let _endHoldStart   = 0;
+const END_HOLD_MS   = 500;
+
+function startEndHold(e) {
+  e.preventDefault();
+  _endHoldStart = Date.now();
+  const btn = document.getElementById('btn-end-walk');
+  const bar = document.getElementById('btn-end-progress');
+  if (btn) btn.classList.add('holding');
+
+  // プログレスバーをアニメーション
+  function tick() {
+    const elapsed = Date.now() - _endHoldStart;
+    const pct     = Math.min(elapsed / END_HOLD_MS * 100, 100);
+    if (bar) bar.style.width = pct + '%';
+    if (elapsed < END_HOLD_MS) {
+      _endHoldRaf = requestAnimationFrame(tick);
+    }
+  }
+  _endHoldRaf = requestAnimationFrame(tick);
+
+  _endHoldTimer = setTimeout(() => {
+    cancelEndHold();
+    endWalk();
+  }, END_HOLD_MS);
+}
+
+function cancelEndHold() {
+  clearTimeout(_endHoldTimer);
+  cancelAnimationFrame(_endHoldRaf);
+  _endHoldTimer = null;
+  _endHoldRaf   = null;
+  const btn = document.getElementById('btn-end-walk');
+  const bar = document.getElementById('btn-end-progress');
+  if (btn) btn.classList.remove('holding');
+  if (bar) bar.style.width = '0%';
+}
+
+endWalk() {
 
   isWalking = false;
   if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; }
