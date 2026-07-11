@@ -460,21 +460,29 @@ async function suggestRoutes() {
   const settings = getSettings();
   const targetDistM = mins * WALK_SPEED;
 
-  // preferGreen: 近くの公園・緑道を取得してルート方向バイアスに使う
+  // preferGreen: 近くの公園・緑道・川沿いエリアを取得してルート方向バイアスに使う
   let nearbyParks = [];
   if (settings.preferGreen) {
     try {
-      const parkQ = `[out:json][timeout:8];
+      const parkQ = `[out:json][timeout:10];
 (
   node["leisure"~"park|garden|dog_park"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
   node["natural"~"wood"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
+  node["waterway"~"river|stream|canal"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
+  node["natural"="water"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
+  way["waterway"~"river|stream|canal"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
 );
-out body 10;`;
+out center body 15;`;
       const parkRes  = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST', body: 'data=' + encodeURIComponent(parkQ),
       });
       const parkData = await parkRes.json();
-      nearbyParks = (parkData.elements || []).map(el => ({ lat: el.lat, lng: el.lon }));
+      nearbyParks = (parkData.elements || [])
+        .map(el => ({
+          lat: el.lat ?? el.center?.lat,
+          lng: el.lon ?? el.center?.lon,
+        }))
+        .filter(p => p.lat != null && p.lng != null);
     } catch(e) { nearbyParks = []; }
   }
 
