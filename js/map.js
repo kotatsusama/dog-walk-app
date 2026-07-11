@@ -173,7 +173,7 @@ function generateWaypoints(lat, lng, targetMinutes, idx, scaleFactor = 1.0, near
   ];
 }
 
-async function fetchOSRMRoute(startLat, startLng, wps) {
+async async function fetchOSRMRoute(startLat, startLng, wps) {
   const coords = [
     `${startLng},${startLat}`,
     ...wps.map(w => `${w.lng},${w.lat}`),
