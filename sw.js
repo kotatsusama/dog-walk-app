@@ -3,7 +3,7 @@
    わんポナビ v2
 ============================================================ */
 
-const CACHE_NAME = 'wanponavi-v2';
+const CACHE_NAME = 'wanponavi-v99';
 const ASSETS = [
   './',
   './index.html',
@@ -14,6 +14,10 @@ const ASSETS = [
   './js/health.js',
   './js/app.js',
   './manifest.json',
+  './images/bg-scene.webp',
+  './images/dog-character-transparent.png',
+  './images/icon-192.png',
+  './images/icon-512.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
 ];
@@ -35,17 +39,6 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // APIリクエストはネットワーク優先
-  if (e.request.url.includes('api.open-meteo.com') ||
-      e.request.url.includes('overpass-api.de') ||
-      e.request.url.includes('nominatim.openstreetmap.org') ||
-      e.request.url.includes('router.project-osrm.org')) {
-    e.respondWith(fetch(e.request).catch(() => new Response('{}', { headers: { 'Content-Type': 'application/json' } })));
-    return;
-  }
-
-  // それ以外はキャッシュ優先
-  e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
-  );
+  // 常にネットワークから取得(キャッシュ無効)
+  e.respondWith(fetch(e.request));
 });

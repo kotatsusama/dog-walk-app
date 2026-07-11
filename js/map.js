@@ -140,37 +140,46 @@ const WALK_SPEED = 45;
 const ROAD_FACTOR = 1.20;
 
 function generateWaypoints(lat, lng, targetMinutes, idx, scaleFactor = 1.0, nearbyParks = []) {
-  const settings   = getSettings();
-  const targetDist = (targetMinutes * WALK_SPEED) / ROAD_FACTOR * scaleFactor;
-  const half       = targetDist / 2;
+  const settings = getSettings();
+  const cosLat   = Math.cos(lat * Math.PI / 180);
 
-  const angles = [0, (2 * Math.PI / 3), (4 * Math.PI / 3)];
-  let   angle  = angles[idx] + (Math.random() - 0.5) * 0.6;
+  // 目標の片道直線距離 = 総距離の半分
+  // 総距離 = targetMinutes * WALK_SPEED (m)
+  // ROAD_FACTORで割って直線距離に換算
+  const totalDist = targetMinutes * WALK_SPEED * scaleFactor;
+  const oneway    = (totalDist / 2) / ROAD_FACTOR;
 
-  // preferGreen: 近くに公園があればその方向へ角度をバイアス
+  // 3ルートを均等に120度ずつ方向を変える
+  const baseAngles = [0, (2 * Math.PI / 3), (4 * Math.PI / 3)];
+  let angle = baseAngles[idx] + (Math.random() - 0.5) * 0.4;
+
+  // preferGreen: 近くの公園・川の方向に30%バイアス
   if (settings.preferGreen && nearbyParks.length) {
-    const park    = nearbyParks[idx % nearbyParks.length];
-    const cosLat_ = Math.cos(lat * Math.PI / 180);
-    const dLng    = (park.lng - lng) * cosLat_;
-    const dLat    = park.lat - lat;
+    const park      = nearbyParks[idx % nearbyParks.length];
+    const dLng      = (park.lng - lng) * cosLat;
+    const dLat      = park.lat - lat;
     const parkAngle = Math.atan2(dLng, dLat);
-    // 公園方向に30%バイアス
     angle = angle * 0.7 + parkAngle * 0.3;
   }
 
-  // loop: 往路と復路で大きく角度を広げる(同じ道を通りにくくする)
-  const spread = settings.loop ? 0.70 : 0.35;
+  // loop: 往路・復路の角度を広げて同じ道を通りにくくする
+  const spread = settings.loop ? 0.65 : 0.25;
 
-  // avoidBusy: 中継点を手前寄りに置いて生活道路を通りやすくする
-  const d1 = settings.avoidBusy ? half * 0.40 : half * 0.50;
-  const d2 = settings.avoidBusy ? half * 0.75 : half * 0.90;
+  // 折り返し点1点 + 中間点1点の2ウェイポイント方式
+  // wp1: 往路の中間(oneway * 0.5 の距離)
+  // wp2: 折り返し点(oneway の距離)
   const a1 = angle - spread;
-  const a2 = angle + spread;
+  const a2 = angle + spread * 0.3; // 折り返し点はやや中心寄り
 
-  const cosLat = Math.cos(lat * Math.PI / 180);
   return [
-    { lat: lat + (d1 * Math.cos(a1)) / 111320, lng: lng + (d1 * Math.sin(a1)) / (111320 * cosLat) },
-    { lat: lat + (d2 * Math.cos(a2)) / 111320, lng: lng + (d2 * Math.sin(a2)) / (111320 * cosLat) },
+    {
+      lat: lat + (oneway * 0.5 * Math.cos(a1)) / 111320,
+      lng: lng + (oneway * 0.5 * Math.sin(a1)) / (111320 * cosLat),
+    },
+    {
+      lat: lat + (oneway * Math.cos(a2)) / 111320,
+      lng: lng + (oneway * Math.sin(a2)) / (111320 * cosLat),
+    },
   ];
 }
 
@@ -182,9 +191,7 @@ async function fetchOSRMRoute(startLat, startLng, wps) {
   ].join(';');
 
   try {
-    const r = await fetch(
-      `https://router.project-osrm.org/route/v1/foot/${coords}?overview=full&geometries=geojson`
-    );
+    const r = await fetch(`https://router.project-osrm.org/route/v1/foot/${coords}?overview=full&geometries=geojson`);
     const d = await r.json();
     if (d.code === 'Ok' && d.routes?.length) {
       const rt = d.routes[0];
@@ -194,7 +201,7 @@ async function fetchOSRMRoute(startLat, startLng, wps) {
       };
     }
     return null;
-  } catch(e) { return null; }
+  } catch(e) { console.error('[OSRM] error:', e); return null; }
 }
 
 // 水飲み場を最寄り順に取得
@@ -224,9 +231,9 @@ out body 5;`;
 function calcAdjustScale(actualDistance, targetMinutes) {
   const targetDist = targetMinutes * WALK_SPEED;
   const ratio      = actualDistance / targetDist;
-  if (ratio > 1.25) return 1 / ratio;   // 長すぎ → 縮小
-  if (ratio < 0.75) return 1 / ratio;   // 短すぎ → 拡大
-  return null; // 調整不要
+  if (ratio > 1.15) return 1 / ratio;   // 長すぎ → 縮小
+  if (ratio < 0.85) return 1 / ratio;   // 短すぎ → 拡大
+  return null; // ±15%以内なら調整不要
 }
 
 // ルート1本をフェッチ。距離が大きくズレたら1回だけスケール補正して再取得
@@ -425,10 +432,8 @@ async function suggestRoutes() {
   const type  = getRouteRecommendationType();
   const wdata = currentWeatherData;
 
-  // 暑さに応じて距離を調整(極端な暑さでも必ずルートを提案)
+  // ユーザー指定時間を優先。暑さ警告はバナーで表示するのみ
   let mins = selectedMinutes;
-  if (type === 'extreme_shaded') mins = Math.min(selectedMinutes, 15);
-  else if (type === 'shaded_short') mins = Math.min(selectedMinutes, 20);
 
   // ルート名・バッジ: 暑さレベルで日陰系に変更
   let names, badges, colors;

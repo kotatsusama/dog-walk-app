@@ -198,9 +198,6 @@ function addDogEncounter() {
 }
 
 // ================================================================
-// 散歩終了
-// ================================================================
-function // ================================================================
 // 散歩終了ボタン — 長押し防止 (500ms)
 // ================================================================
 let _endHoldTimer   = null;
@@ -243,7 +240,7 @@ function cancelEndHold() {
   if (bar) bar.style.width = '0%';
 }
 
-endWalk() {
+function endWalk() {
 
   isWalking = false;
   if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; }
