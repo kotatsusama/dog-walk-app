@@ -139,20 +139,32 @@ const WALK_SPEED = 45;
 // (1.40は縮小しすぎだったため1.20に修正)
 const ROAD_FACTOR = 1.20;
 
-function generateWaypoints(lat, lng, targetMinutes, idx, scaleFactor = 1.0) {
-  // 目標距離 ÷ 道路係数 = 直線配置すべき距離
+function generateWaypoints(lat, lng, targetMinutes, idx, scaleFactor = 1.0, nearbyParks = []) {
+  const settings   = getSettings();
   const targetDist = (targetMinutes * WALK_SPEED) / ROAD_FACTOR * scaleFactor;
   const half       = targetDist / 2;
 
   const angles = [0, (2 * Math.PI / 3), (4 * Math.PI / 3)];
-  const angle  = angles[idx] + (Math.random() - 0.5) * 0.6;
+  let   angle  = angles[idx] + (Math.random() - 0.5) * 0.6;
 
-  // 往路・復路の中継点を対称に配置
-  // d1: 行き途中, d2: 折り返し点付近
+  // preferGreen: 近くに公園があればその方向へ角度をバイアス
+  if (settings.preferGreen && nearbyParks.length) {
+    const park    = nearbyParks[idx % nearbyParks.length];
+    const cosLat_ = Math.cos(lat * Math.PI / 180);
+    const dLng    = (park.lng - lng) * cosLat_;
+    const dLat    = park.lat - lat;
+    const parkAngle = Math.atan2(dLng, dLat);
+    // 公園方向に30%バイアス
+    angle = angle * 0.7 + parkAngle * 0.3;
+  }
+
+  // loop: 往路と復路で大きく角度を広げる(同じ道を通りにくくする)
+  const spread = settings.loop ? 0.70 : 0.35;
+
   const d1 = half * 0.50;
   const d2 = half * 0.90;
-  const a1 = angle - 0.35;
-  const a2 = angle + 0.35;
+  const a1 = angle - spread;
+  const a2 = angle + spread;
 
   const cosLat = Math.cos(lat * Math.PI / 180);
   return [
@@ -164,12 +176,20 @@ function generateWaypoints(lat, lng, targetMinutes, idx, scaleFactor = 1.0) {
 async function fetchOSRMRoute(startLat, startLng, wps) {
   const coords = [
     `${startLng},${startLat}`,
-    `${wps[0].lng},${wps[0].lat}`,
-    `${wps[1].lng},${wps[1].lat}`,
+    ...wps.map(w => `${w.lng},${w.lat}`),
     `${startLng},${startLat}`,
   ].join(';');
+
+  // 設定: 交通量の多い道を避ける
+  const settings = getSettings();
+  const excludeParam = settings.avoidBusy
+    ? '&exclude=motorway,trunk,primary'
+    : '';
+
   try {
-    const r = await fetch(`https://router.project-osrm.org/route/v1/foot/${coords}?overview=full&geometries=geojson`);
+    const r = await fetch(
+      `https://router.project-osrm.org/route/v1/foot/${coords}?overview=full&geometries=geojson${excludeParam}`
+    );
     const d = await r.json();
     if (d.code === 'Ok' && d.routes?.length) {
       const rt = d.routes[0];
@@ -179,6 +199,28 @@ async function fetchOSRMRoute(startLat, startLng, wps) {
       };
     }
     return null;
+  } catch(e) { return null; }
+}
+
+// 水飲み場を最寄り順に取得
+async function fetchNearestWaterPoint(lat, lng, radiusM) {
+  const q = `[out:json][timeout:8];
+(
+  node["amenity"="drinking_water"](around:${radiusM},${lat},${lng});
+  node["amenity"="fountain"](around:${radiusM},${lat},${lng});
+);
+out body 5;`;
+  try {
+    const res  = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST', body: 'data=' + encodeURIComponent(q),
+    });
+    const data = await res.json();
+    if (!data.elements?.length) return null;
+    // 最寄り順でソート
+    return data.elements
+      .map(el => ({ lat: el.lat, lng: el.lon,
+                    dist: calcDistance(lat, lng, el.lat, el.lon) }))
+      .sort((a, b) => a.dist - b.dist)[0];
   } catch(e) { return null; }
 }
 
@@ -193,19 +235,17 @@ function calcAdjustScale(actualDistance, targetMinutes) {
 }
 
 // ルート1本をフェッチ。距離が大きくズレたら1回だけスケール補正して再取得
-async function fetchRouteWithAdjust(startLat, startLng, targetMinutes, idx) {
-  const wps1   = generateWaypoints(startLat, startLng, targetMinutes, idx, 1.0);
+async function fetchRouteWithAdjust(startLat, startLng, targetMinutes, idx, nearbyParks = [], waterPoint = null) {
+  const wps1 = buildWaypoints(startLat, startLng, targetMinutes, idx, 1.0, nearbyParks, waterPoint);
   const result = await fetchOSRMRoute(startLat, startLng, wps1);
   if (!result) return null;
 
   const scale = calcAdjustScale(result.distance, targetMinutes);
-  if (scale === null) return result; // ±20%以内 → そのまま使用
+  if (scale === null) return result;
 
-  // 補正スケールで再試行
-  const wps2      = generateWaypoints(startLat, startLng, targetMinutes, idx, scale);
-  const adjusted  = await fetchOSRMRoute(startLat, startLng, wps2);
+  const wps2     = buildWaypoints(startLat, startLng, targetMinutes, idx, scale, nearbyParks, waterPoint);
+  const adjusted = await fetchOSRMRoute(startLat, startLng, wps2);
 
-  // 再試行結果が元より希望時間に近ければ採用
   if (adjusted) {
     const targetDist = targetMinutes * WALK_SPEED;
     const diff1 = Math.abs(result.distance   - targetDist);
@@ -213,6 +253,21 @@ async function fetchRouteWithAdjust(startLat, startLng, targetMinutes, idx) {
     return diff2 < diff1 ? adjusted : result;
   }
   return result;
+}
+
+// 中継点を組み立てる(水飲み場がある場合は中継点に挿入)
+function buildWaypoints(lat, lng, targetMinutes, idx, scaleFactor, nearbyParks, waterPoint) {
+  const wps = generateWaypoints(lat, lng, targetMinutes, idx, scaleFactor, nearbyParks);
+  // water設定オン かつ 水飲み場が目標距離の30〜70%圏内にある場合、折り返し点として挿入
+  if (waterPoint && getSettings().water) {
+    const targetDist = (targetMinutes * WALK_SPEED);
+    const distToWater = calcDistance(lat, lng, waterPoint.lat, waterPoint.lng);
+    if (distToWater < targetDist * 0.6 && distToWater > targetDist * 0.1) {
+      // wps[1](折り返し点)を水飲み場付近に差し替え
+      wps[1] = { lat: waterPoint.lat, lng: waterPoint.lng };
+    }
+  }
+  return wps;
 }
 
 // Overpass: スポット検索(暑さ対応版)
@@ -402,9 +457,36 @@ async function suggestRoutes() {
 
   generatedRoutes = [];
 
-  // 補正付きルート取得(希望時間に近いルートを返す)
+  const settings = getSettings();
+  const targetDistM = mins * WALK_SPEED;
+
+  // preferGreen: 近くの公園・緑道を取得してルート方向バイアスに使う
+  let nearbyParks = [];
+  if (settings.preferGreen) {
+    try {
+      const parkQ = `[out:json][timeout:8];
+(
+  node["leisure"~"park|garden|dog_park"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
+  node["natural"~"wood"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
+);
+out body 10;`;
+      const parkRes  = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST', body: 'data=' + encodeURIComponent(parkQ),
+      });
+      const parkData = await parkRes.json();
+      nearbyParks = (parkData.elements || []).map(el => ({ lat: el.lat, lng: el.lon }));
+    } catch(e) { nearbyParks = []; }
+  }
+
+  // water: 近くの水飲み場を取得
+  let waterPoint = null;
+  if (settings.water) {
+    waterPoint = await fetchNearestWaterPoint(startLoc.lat, startLoc.lng, targetDistM * 0.7);
+  }
+
+  // 補正付きルート取得(設定を反映)
   const results = await Promise.all([0,1,2].map(i =>
-    fetchRouteWithAdjust(startLoc.lat, startLoc.lng, mins, i)
+    fetchRouteWithAdjust(startLoc.lat, startLoc.lng, mins, i, nearbyParks, waterPoint)
   ));
 
   results.forEach((r, i) => {

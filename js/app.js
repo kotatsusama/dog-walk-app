@@ -186,6 +186,7 @@ function init() {
   updateSpotsUI();
   updateFavRoutesUI();
   loadDogProfile();
+  loadSettingsToggles();
 
   // 天気取得: 登録済みスポット → GPS → フォールバック(大阪)
   const spots = getSpots();
@@ -200,6 +201,43 @@ function init() {
     fetchWeather(34.6937, 135.5023);
   }
 }
+
+// ================================================================
+// 設定トグル — 読み込みと保存
+// ================================================================
+function loadSettingsToggles() {
+  const s = getSettings();
+  const map = {
+    'setting-avoid-busy':    'avoidBusy',
+    'setting-prefer-green':  'preferGreen',
+    'setting-loop':          'loop',
+    'setting-water':         'water',
+  };
+  Object.entries(map).forEach(([elId, key]) => {
+    const el = document.getElementById(elId);
+    if (el) el.checked = !!s[key];
+  });
+}
+
+function onSettingToggle() {
+  const map = {
+    'setting-avoid-busy':    'avoidBusy',
+    'setting-prefer-green':  'preferGreen',
+    'setting-loop':          'loop',
+    'setting-water':         'water',
+  };
+  const s = getSettings();
+  Object.entries(map).forEach(([elId, key]) => {
+    const el = document.getElementById(elId);
+    if (el) s[key] = el.checked;
+  });
+  saveSettings(s);
+}
+
+// トグル変更イベントを登録
+['setting-avoid-busy','setting-prefer-green','setting-loop','setting-water'].forEach(id => {
+  document.getElementById(id)?.addEventListener('change', onSettingToggle);
+});
 
 // PWA Service Worker
 if ('serviceWorker' in navigator) {
