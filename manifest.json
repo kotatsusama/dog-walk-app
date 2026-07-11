@@ -1,0 +1,14 @@
+{
+  "name": "わんポナビ",
+  "short_name": "わんポナビ",
+  "description": "愛犬の散歩ルート提案・トイレ記録・健康管理アプリ",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1117",
+  "theme_color": "#FF8C42",
+  "icons": [
+    { "src": "./images/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./images/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

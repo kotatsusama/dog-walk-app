@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="わんポナビ">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./images/icon-192.png">
+<title>わんポナビ 🐾</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+/* ============================================================
+   わんポナビ v2 — メインスタイル
+   デザインDNA: glassmorphism + metallic-shine + gradient-border
+   既存プロジェクト(DCO学習ポータル / Rackdown)のUIパターンを継承
+============================================================ */
+
+/* ---------- CSS変数 ---------- */
+:root {
+  /* ブランドカラー */
+  --primary:       #FF8C42;
+  --primary-dark:  #E67332;
+  --primary-glow:  rgba(255,140,66,0.45);
+  --secondary:     #4ECDC4;
+  --secondary-glow:rgba(78,205,196,0.35);
+  --accent:        #FFE66D;
+
+  /* WBGT */
+  --wbgt-safe:    #2ECC71;
+  --wbgt-caution: #F1C40F;
+  --wbgt-warning: #E67E22;
+  --wbgt-danger:  #E74C3C;
+  --wbgt-extreme: #9B59B6;
+
+  /* 背景 */
+  --bg-body:      linear-gradient(145deg, #0d1117 0%, #1a1f2e 40%, #0f2027 100%);
+  --bg-card:      rgba(10,14,24,0.78);
+  --bg-card-hover:rgba(10,14,24,0.88);
+  --bg-nav:       rgba(8,11,20,0.96);
+
+  /* テキスト */
+  --text:         #e8eaf0;
+  --text-sub:     rgba(232,234,240,0.55);
+  --text-muted:   rgba(232,234,240,0.35);
+
+  /* ボーダー */
+  --border:       rgba(255,255,255,0.10);
+  --border-focus: var(--primary);
+
+  /* シャドウ */
+  --shadow-sm:    0 2px 8px rgba(0,0,0,0.35);
+  --shadow:       0 4px 20px rgba(0,0,0,0.45);
+  --shadow-lg:    0 8px 40px rgba(0,0,0,0.55);
+  --shadow-glow:  0 0 24px var(--primary-glow);
+
+  /* 共通 */
+  --radius:       18px;
+  --radius-sm:    10px;
+  --radius-xs:    6px;
+  --transition:   0.25s cubic-bezier(0.4,0,0.2,1);
+  --font:         -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', sans-serif;
+
+  /* ナビ高さ */
+  --nav-h: 64px;
+}
+
+/* ---------- リセット ---------- */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html { -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: var(--font);
+  background: var(--bg-body);
+  color: var(--text);
+  min-height: 100dvh;
+  overflow-x: hidden;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+button { font-family: var(--font); cursor: pointer; }
+input, select, textarea { font-family: var(--font); }
+a { text-decoration: none; color: inherit; }
+
+/* ---------- 背景パーティクル(CSS only) ---------- */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(255,140,66,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 80%, rgba(78,205,196,0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(255,230,109,0.03) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* ================================================================
+   スクリーン管理
+================================================================ */
+.screen { display:none; padding:16px; padding-bottom:calc(var(--nav-h) + 16px + env(safe-area-inset-bottom)); animation: fadeUp 0.3s ease; }
+.screen.active { display:block; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+
+/* ================================================================
+   背景画像レイヤー (ホーム・ルート画面)
+   画像サイズ: 941×1672px (縦長・スマホ向け比率)
+================================================================ */
+.bg-scene {
+  position: fixed; inset: 0; z-index: -2;
+  background-image: url('./images/bg-scene.webp');
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  pointer-events: none;
+
+  /* デフォルト: 縦長画面(iPhone等)向け — coverで全体をぴったり埋める */
+  background-size: cover;
+  background-position: center center;
+}
+
+/* 横長画面(PC・タブレット横)向け:
+   画像が縦長なので contain にして全体を表示、左右は背景色で補完 */
+@media (orientation: landscape) {
+  .bg-scene {
+    background-size: contain;
+    background-position: center center;
+    /* 画像の外側は同系色でなじませる */
+    background-color: #87CEEB;
+  }
+}
+
+/* ダークオーバーレイ: 背景を活かしつつカードを読みやすくする */
+.bg-scene::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(8,12,22,0.60) 0%,
+    rgba(8,12,22,0.35) 25%,
+    rgba(8,12,22,0.30) 60%,
+    rgba(8,12,22,0.68) 100%
+  );
+}
+
+/* JS で body に .show-bg を付与したときだけ表示 */
+body.show-bg .bg-scene { opacity: 1; }
+
+/* ================================================================
+   ボトムナビゲーション
+================================================================ */
+.bottom-nav {
+  position: fixed; bottom:0; left:0; right:0; z-index:1000;
+  height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--bg-nav);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid var(--border);
+  display: flex; justify-content: space-around; align-items: center;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
+}
+.nav-item {
+  display: flex; flex-direction: column; align-items: center; gap:3px;
+  font-size: 10px; color: var(--text-muted);
+  padding: 8px 14px; border-radius: var(--radius-sm);
+  border: none; background: none; transition: var(--transition);
+  position: relative;
+}
+.nav-item.active { color: var(--primary); }
+.nav-item.active::before {
+  content: '';
+  position: absolute; top: 0; left:50%; transform:translateX(-50%);
+  width: 32px; height: 2px; border-radius:2px;
+  background: linear-gradient(90deg, var(--primary), var(--primary-dark));
+  box-shadow: 0 0 8px var(--primary-glow);
+}
+.nav-icon { font-size:22px; line-height:1; transition: transform var(--transition); }
+.nav-item.active .nav-icon { transform: scale(1.15); }
+.nav-item:active .nav-icon { transform: scale(0.88); }
+
+/* ================================================================
+   共通カードコンポーネント(glassmorphism)
+================================================================ */
+.card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid rgba(255,255,255,0.13);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.07);
+  position: relative; overflow: hidden;
+  transition: var(--transition);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.card::before {
+  content: '';
+  position: absolute; top:-50%; left:-50%; width:200%; height:200%;
+  background: linear-gradient(105deg,
+    transparent 40%,
+    rgba(255,255,255,0.04) 45%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.04) 55%,
+    transparent 60%
+  );
+  animation: metallic-shine 6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes metallic-shine {
+  0%,100% { transform: translateX(-100%); opacity:0; }
+  30%      { opacity:0; }
+  50%      { transform: translateX(0%); opacity:1; }
+  70%      { transform: translateX(100%); opacity:0; }
+}
+.card-body { padding: 16px; position:relative; z-index:1; }
+
+/* gradient-border on hover(::after layer) */
+.card-glow {
+  position: absolute; inset:0; border-radius:inherit;
+  background: linear-gradient(135deg, var(--primary), #ff6b00, #ffb84d);
+  background-size: 300% 300%;
+  animation: gradientShift 4s ease infinite;
+  opacity:0; transition: opacity var(--transition);
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  z-index:0; pointer-events:none;
+}
+@keyframes gradientShift {
+  0%   { background-position: 0%   50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0%   50%; }
+}
+
+/* ================================================================
+   共通ボタン
+================================================================ */
+.btn {
+  display: inline-flex; align-items:center; justify-content:center; gap:8px;
+  padding: 14px 24px; border:none; border-radius: var(--radius-sm);
+  font-size:15px; font-weight:700; transition: var(--transition);
+  width:100%; position:relative; overflow:hidden;
+}
+.btn:active { transform: scale(0.96); }
+.btn:disabled { opacity:0.4; pointer-events:none; }
+
+/* ── Primary (orange glow) ── */
+.btn-primary {
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  box-shadow: 0 4px 15px var(--primary-glow), var(--shadow-sm);
+}
+.btn-primary:active {
+  box-shadow: 0 0 30px var(--primary-glow), 0 0 60px rgba(255,140,66,0.2);
+}
+/* uiverse.io スタイル:ボタン内光の走り */
+.btn-primary::after {
+  content: '';
+  position:absolute; top:-50%; left:-60%; width:40%; height:200%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.5s ease;
+}
+.btn-primary:hover::after { left:120%; }
+
+/* ── Secondary (teal) ── */
+.btn-secondary {
+  color: #fff;
+  background: linear-gradient(135deg, var(--secondary) 0%, #36a89f 100%);
+  box-shadow: 0 4px 15px var(--secondary-glow), var(--shadow-sm);
+}
+.btn-secondary:active {
+  box-shadow: 0 0 30px var(--secondary-glow);
+}
+
+/* ── Ghost ── */
+.btn-ghost {
+  color: var(--text-sub);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { border-color: var(--primary); color: var(--primary); }
+
+/* ── Danger ── */
+.btn-danger {
+  color: #fff;
+  background: linear-gradient(135deg, #E74C3C, #c0392b);
+  box-shadow: 0 4px 15px rgba(231,76,60,0.35), var(--shadow-sm);
+}
+
+/* ── Icon Buttons (散歩中) ── */
+.btn-pee {
+  background: linear-gradient(135deg, #4A9EE3, #2471a3);
+  color:#fff; border:none; border-radius:var(--radius-sm);
+  padding:14px 12px; font-size:13px; font-weight:700;
+  flex:1; transition:var(--transition);
+  box-shadow: 0 4px 12px rgba(74,158,227,0.35);
+}
+.btn-poo {
+  background: linear-gradient(135deg, #A0785A, #7d5a45);
+  color:#fff; border:none; border-radius:var(--radius-sm);
+  padding:14px 12px; font-size:13px; font-weight:700;
+  flex:1; transition:var(--transition);
+  box-shadow: 0 4px 12px rgba(125,90,69,0.35);
+}
+.btn-pee:active, .btn-poo:active { transform:scale(0.93); }
+
+/* ── End walk ── */
+.btn-end {
+  background: linear-gradient(135deg, #E74C3C, #c0392b);
+  color:#fff; border:none; border-radius:var(--radius-sm);
+  padding:16px; font-size:16px; font-weight:700; width:100%;
+  transition:var(--transition);
+  box-shadow: 0 4px 16px rgba(231,76,60,0.4);
+}
+.btn-end:active { transform:scale(0.96); }
+
+/* ================================================================
+   フローティングラベル Input(uiverse.io スタイル)
+================================================================ */
+.float-field { position:relative; margin-bottom:14px; }
+.float-field input, .float-field select {
+  width:100%; padding: 18px 14px 6px;
+  background: rgba(255,255,255,0.05);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text); font-size:15px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  -webkit-appearance: none;
+}
+.float-field input:focus, .float-field select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255,140,66,0.15);
+}
+.float-field label {
+  position:absolute; left:14px; top:50%; transform:translateY(-50%);
+  font-size:14px; color:var(--text-muted);
+  pointer-events:none; transition: var(--transition);
+}
+.float-field input:focus ~ label,
+.float-field input:not(:placeholder-shown) ~ label {
+  top: 10px; transform:none; font-size:11px; color:var(--primary);
+}
+.float-field input::placeholder { color:transparent; }
+
+/* ================================================================
+   セクションタイトル
+================================================================ */
+.section-title {
+  font-size:13px; font-weight:700; letter-spacing:1.5px;
+  text-transform:uppercase; color:var(--primary);
+  margin-bottom:12px; display:flex; align-items:center; gap:8px;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.8);
+}
+.section-title::after {
+  content:''; flex:1; height:1px;
+  background: linear-gradient(90deg, var(--primary-glow), transparent);
+}
+
+/* ================================================================
+   ホーム画面
+================================================================ */
+.home-header {
+  text-align:center; padding: 20px 0 16px;
+  position: relative;
+}
+.home-logo {
+  font-size:30px; font-weight:800; letter-spacing:-0.5px;
+  background: linear-gradient(90deg, #FF8C42, #FFD700, #FF6600, #FFD700, #FF8C42);
+  background-size: 300% 100%;
+  animation: shimmer-title 5s ease-in-out infinite;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+@keyframes shimmer-title {
+  0%   { background-position: 0%   50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0%   50%; }
+}
+.home-sub { font-size:12px; color:var(--text-muted); margin-top:4px; letter-spacing:0.5px; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
+
+/* 時計 */
+.clock-card {
+  display: flex; align-items:center; justify-content:space-between;
+  padding: 16px 20px; margin-bottom:12px;
+}
+.clock-time { font-size:44px; font-weight:700; letter-spacing:-1px; line-height:1; }
+.clock-date { font-size:12px; color:var(--text-sub); margin-top:4px; }
+
+/* 天気カード */
+.weather-card { margin-bottom:12px; }
+.weather-inner { padding:16px 20px; }
+.weather-row { display:flex; align-items:center; gap:16px; }
+.weather-icon-big { font-size:52px; line-height:1; }
+.weather-info { flex:1; }
+.weather-temp { font-size:38px; font-weight:700; line-height:1; }
+.weather-desc { font-size:13px; color:var(--text-sub); margin-top:2px; }
+.weather-meta {
+  display:flex; gap:16px; margin-top:10px; padding-top:10px;
+  border-top:1px solid var(--border);
+}
+.weather-meta-item { font-size:12px; color:var(--text-sub); display:flex; align-items:center; gap:5px; }
+
+/* WBGT バー */
+.wbgt-bar {
+  margin-top:10px; padding:12px 16px; border-radius:var(--radius-sm);
+  display:flex; align-items:center; gap:12px;
+  font-weight:700; font-size:14px;
+}
+.wbgt-bar .wbgt-val { font-size:22px; font-weight:800; margin-left:auto; }
+.wbgt-safe    { background: linear-gradient(135deg, rgba(46,204,113,0.25), rgba(46,204,113,0.10)); border:1px solid rgba(46,204,113,0.3); color:#2ECC71; }
+.wbgt-caution { background: linear-gradient(135deg, rgba(241,196,15,0.25), rgba(241,196,15,0.10)); border:1px solid rgba(241,196,15,0.3); color:#F1C40F; }
+.wbgt-warning { background: linear-gradient(135deg, rgba(230,126,34,0.25), rgba(230,126,34,0.10)); border:1px solid rgba(230,126,34,0.3); color:#E67E22; }
+.wbgt-danger  { background: linear-gradient(135deg, rgba(231,76,60,0.25), rgba(231,76,60,0.10)); border:1px solid rgba(231,76,60,0.3); color:#E74C3C; }
+.wbgt-extreme { background: linear-gradient(135deg, rgba(155,89,182,0.25), rgba(155,89,182,0.10)); border:1px solid rgba(155,89,182,0.3); color:#9B59B6; }
+
+/* 犬キャラクター */
+.dog-hero { text-align:center; margin:16px 0 8px; }
+.dog-hero img { width:120px; height:auto; filter:drop-shadow(0 4px 16px rgba(255,140,66,0.4)); animation: dog-float 3s ease-in-out infinite; }
+.dog-hero-emoji { font-size:80px; animation: dog-float 3s ease-in-out infinite; display:inline-block; }
+@keyframes dog-float {
+  0%,100% { transform:translateY(0); }
+  50%      { transform:translateY(-8px); }
+}
+
+/* スタート地点セレクター */
+.spot-select-wrap { position:relative; margin-bottom:12px; }
+.spot-select-wrap select {
+  width:100%; padding:14px 40px 14px 16px;
+  background: rgba(10,14,24,0.82);
+  border: 1.5px solid rgba(255,255,255,0.18);
+  border-radius: var(--radius-sm);
+  color:var(--text); font-size:14px;
+  -webkit-appearance:none; appearance:none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.spot-select-wrap select:focus {
+  outline:none; border-color:var(--primary);
+  box-shadow: 0 0 0 3px rgba(255,140,66,0.15);
+}
+.spot-select-arrow {
+  position:absolute; right:14px; top:50%; transform:translateY(-50%);
+  color:var(--text-muted); pointer-events:none; font-size:12px;
+}
+
+/* 時間選択 */
+.time-pills { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; }
+.time-pill {
+  padding:12px 8px; text-align:center;
+  background: rgba(10,14,24,0.80);
+  border: 1.5px solid rgba(255,255,255,0.15);
+  border-radius: var(--radius-sm);
+  font-size:13px; font-weight:700; color:var(--text-sub);
+  cursor:pointer; transition:var(--transition);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.time-pill.active {
+  border-color: var(--primary); color:var(--primary);
+  background: rgba(255,140,66,0.12);
+  box-shadow: 0 0 12px rgba(255,140,66,0.15);
+}
+
+/* ================================================================
+   ルート選択画面
+================================================================ */
+.route-loading { text-align:center; padding:60px 0; color:var(--text-muted); }
+.spinner {
+  display:inline-block; width:32px; height:32px;
+  border:3px solid rgba(255,255,255,0.1);
+  border-top-color:var(--primary); border-radius:50%;
+  animation:spin 0.8s linear infinite; margin-bottom:12px;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+
+.route-card {
+  margin-bottom:14px; cursor:pointer; transition:var(--transition);
+}
+.route-card:hover { transform:translateY(-3px); }
+.route-card.selected .card-glow { opacity:1; }
+.route-card.selected { box-shadow: 0 0 0 2px var(--primary), var(--shadow-lg); }
+.route-card-inner { padding:16px; position:relative; z-index:1; }
+.route-card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.route-card-name { font-size:16px; font-weight:700; }
+.route-badge {
+  font-size:11px; padding:3px 10px; border-radius:20px; font-weight:700;
+}
+.badge-green  { background:rgba(46,204,113,0.2); color:#2ECC71; border:1px solid rgba(46,204,113,0.3); }
+.badge-blue   { background:rgba(52,152,219,0.2); color:#3498DB; border:1px solid rgba(52,152,219,0.3); }
+.badge-purple { background:rgba(155,89,182,0.2); color:#9B59B6; border:1px solid rgba(155,89,182,0.3); }
+.route-card-meta { display:flex; gap:14px; font-size:12px; color:var(--text-sub); margin-bottom:8px; }
+.route-card-spots { font-size:12px; color:var(--text-muted); }
+.route-minimap {
+  display: block;
+  width: 100%;
+  height: 140px;
+  border-radius: var(--radius-sm);
+  margin-top: 10px;
+  background: rgba(255,255,255,0.03);
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+/* Leafletがミニマップ内で横にはみ出さないよう制御 */
+.route-minimap .leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: var(--radius-sm);
+}
+
+/* ================================================================
+   散歩中画面
+================================================================ */
+.walk-stats {
+  display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;
+}
+.walk-stat {
+  padding:14px; text-align:center;
+}
+.walk-stat-val { font-size:28px; font-weight:800; color:var(--primary); line-height:1; }
+.walk-stat-label { font-size:11px; color:var(--text-muted); margin-top:4px; }
+
+#map {
+  width:100%; height:48vh; border-radius:var(--radius); overflow:hidden;
+  margin-bottom:12px; border:1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+.walk-action-row { display:flex; gap:8px; margin-bottom:8px; }
+
+/* スポットリスト */
+.spots-scroll { max-height:180px; overflow-y:auto; }
+.spot-item {
+  display:flex; align-items:center; gap:12px;
+  padding:10px 0; border-bottom:1px solid var(--border);
+}
+.spot-item:last-child { border-bottom:none; }
+.spot-icon { font-size:22px; flex-shrink:0; }
+.spot-info { flex:1; }
+.spot-name { font-size:13px; font-weight:600; }
+.spot-type { font-size:11px; color:var(--text-muted); margin-top:2px; }
+
+/* ================================================================
+   健康タブ
+================================================================ */
+.health-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+.health-stat { padding:16px; text-align:center; }
+.health-stat-val { font-size:30px; font-weight:800; color:var(--primary); }
+.health-stat-label { font-size:11px; color:var(--text-muted); margin-top:4px; }
+
+/* 週間カレンダー */
+.week-cal { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:16px; }
+.week-day { text-align:center; }
+.week-day-label { font-size:10px; color:var(--text-muted); margin-bottom:4px; }
+.week-day-dot {
+  width:32px; height:32px; border-radius:50%; margin:0 auto;
+  display:flex; align-items:center; justify-content:center;
+  font-size:11px; font-weight:700;
+  border:1.5px solid var(--border); color:var(--text-muted);
+  transition: var(--transition);
+}
+.week-day-dot.has-walk {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-color: transparent; color:#fff;
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+.week-day-dot.today {
+  border-color: var(--primary); color:var(--primary);
+}
+
+/* Canvas グラフエリア */
+.chart-wrap { padding:16px; }
+.chart-wrap canvas { width:100%; height:auto; }
+
+/* ストリーク */
+.streak-banner {
+  display:flex; align-items:center; gap:16px; padding:16px 20px; margin-bottom:12px;
+}
+.streak-fire { font-size:40px; animation: fire-pulse 1.5s ease-in-out infinite; }
+@keyframes fire-pulse {
+  0%,100% { transform:scale(1); }
+  50%      { transform:scale(1.12); }
+}
+.streak-count { font-size:36px; font-weight:800; color:var(--primary); }
+.streak-label { font-size:12px; color:var(--text-sub); }
+
+/* 実績バッジ */
+/* ---- 最後のうんちバナー ---- */
+.last-poo-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 13px; color: var(--text-sub);
+}
+.last-poo-banner .poo-elapsed {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.poo-elapsed.fresh  { background: rgba(78,205,196,0.18); color: #4ECDC4; }
+.poo-elapsed.normal { background: rgba(255,193,7,0.15);  color: #FFC107; }
+.poo-elapsed.long   { background: rgba(231,76,60,0.15);  color: #E74C3C; }
+
+/* ---- すれ違い犬の履歴 ---- */
+.dog-enc-day {
+  margin-bottom: 12px;
+}
+.dog-enc-day-label {
+  font-size: 11px; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: 6px; padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.dog-enc-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-size: 13px;
+}
+.dog-enc-item:last-child { border-bottom: none; }
+.dog-enc-breed { flex: 1; font-weight: 600; color: var(--text); }
+.dog-enc-time  { font-size: 11px; color: var(--text-muted); }
+
+.badge-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.achievement-badge {
+  padding:14px 8px; text-align:center; border-radius:var(--radius-sm);
+}
+.achievement-badge.unlocked .badge-icon { opacity:1; filter:none; }
+.achievement-badge.locked .badge-icon { opacity:0.25; filter:grayscale(1); }
+.badge-icon { font-size:28px; display:block; margin-bottom:6px; transition:var(--transition); }
+.badge-name { font-size:10px; font-weight:700; color:var(--text-sub); }
+.badge-desc { font-size:9px; color:var(--text-muted); margin-top:2px; }
+
+/* ================================================================
+   ログタブ
+================================================================ */
+.log-header-stats { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:16px; }
+.log-stat-card { padding:16px; text-align:center; }
+.log-stat-val { font-size:28px; font-weight:800; color:var(--primary); }
+.log-stat-label { font-size:11px; color:var(--text-muted); margin-top:4px; }
+
+.log-entry { margin-bottom:10px; }
+.log-entry-inner { padding:14px 16px; }
+.log-entry-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.log-entry-date { font-size:14px; font-weight:700; }
+.log-entry-time { font-size:12px; color:var(--text-muted); }
+.log-entry-meta { display:flex; flex-wrap:wrap; gap:10px; font-size:12px; color:var(--text-sub); }
+.log-entry-tag {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:3px 10px; border-radius:20px;
+  background:rgba(255,255,255,0.06); border:1px solid var(--border);
+  font-size:11px;
+}
+.log-delete-btn {
+  background:none; border:none; font-size:16px; opacity:0.4;
+  padding:4px 8px; border-radius:var(--radius-xs); transition:var(--transition);
+}
+.log-delete-btn:hover { opacity:1; color:#E74C3C; }
+
+/* ================================================================
+   設定タブ
+================================================================ */
+.settings-block { margin-bottom:14px; }
+.settings-block-inner { padding:16px 20px; }
+.settings-block h3 { font-size:14px; font-weight:700; color:var(--text); margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+.settings-block h3 span { font-size:18px; }
+
+/* マップ地点登録 */
+#register-map { width:100%; height:200px; border-radius:var(--radius-sm); overflow:hidden; margin-bottom:12px; border:1px solid var(--border); }
+
+/* 保存地点リスト */
+/* ---- フリー散歩ボタン ---- */
+.btn-free-walk {
+  width: 100%;
+  padding: 14px;
+  background: rgba(78,205,196,0.12);
+  border: 1.5px solid rgba(78,205,196,0.4);
+  border-radius: var(--radius);
+  color: #4ECDC4;
+  font-size: 15px; font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+  letter-spacing: 0.02em;
+}
+.btn-free-walk:hover:not(:disabled), .btn-free-walk:active:not(:disabled) {
+  background: rgba(78,205,196,0.25);
+  border-color: rgba(78,205,196,0.7);
+  transform: translateY(-1px);
+}
+.btn-free-walk:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ---- 散歩モードバッジ ---- */
+.walk-mode-badge {
+  display: inline-block;
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 12px; font-weight: 700;
+  margin-bottom: 10px;
+  letter-spacing: 0.03em;
+}
+.walk-mode-badge.mode-route  { background: rgba(255,107,107,0.18); color: #FF6B6B; border: 1px solid rgba(255,107,107,0.35); }
+.walk-mode-badge.mode-free   { background: rgba(78,205,196,0.18);  color: #4ECDC4; border: 1px solid rgba(78,205,196,0.35); }
+.walk-mode-badge.mode-fav    { background: rgba(255,193,7,0.18);   color: #FFC107; border: 1px solid rgba(255,193,7,0.35); }
+
+/* ---- お気に入り登録ボタン ---- */
+.btn-fav {
+  width: 100%;
+  padding: 13px;
+  background: rgba(255,193,7,0.12);
+  border: 1.5px solid rgba(255,193,7,0.4);
+  border-radius: var(--radius);
+  color: #FFC107;
+  font-size: 14px; font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.btn-fav:hover, .btn-fav:active {
+  background: rgba(255,193,7,0.25);
+  border-color: rgba(255,193,7,0.7);
+}
+
+.saved-spot {
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  background: rgba(255,255,255,0.05); border-radius: var(--radius-sm);
+  margin-bottom: 6px; border: 1px solid var(--border);
+}
+.saved-spot-info { flex: 1; min-width: 0; }
+.saved-spot-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved-spot-addr { font-size: 11px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved-spot-del {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  background: rgba(231,76,60,0.15);
+  border: 1px solid rgba(231,76,60,0.35);
+  border-radius: var(--radius-xs);
+  color: #E74C3C;
+  font-size: 14px; font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.saved-spot-del:hover, .saved-spot-del:active {
+  background: rgba(231,76,60,0.35);
+  border-color: rgba(231,76,60,0.7);
+  transform: scale(0.93);
+}
+
+/* Toggle switch(uiverse.io スタイル) */
+.toggle-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 0; border-bottom:1px solid var(--border);
+}
+.toggle-row:last-child { border-bottom:none; }
+.toggle-label { font-size:13px; color:var(--text-sub); }
+.toggle-switch { position:relative; width:44px; height:26px; flex-shrink:0; }
+.toggle-switch input { opacity:0; width:0; height:0; }
+.toggle-slider {
+  position:absolute; inset:0; border-radius:26px; cursor:pointer;
+  background: rgba(255,255,255,0.12); transition:var(--transition);
+  border:1.5px solid var(--border);
+}
+.toggle-slider::before {
+  content:''; position:absolute; width:18px; height:18px;
+  left:3px; top:50%; transform:translateY(-50%);
+  background:#fff; border-radius:50%;
+  box-shadow: var(--shadow-sm); transition:var(--transition);
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-color:transparent; box-shadow: 0 0 10px var(--primary-glow);
+}
+.toggle-switch input:checked + .toggle-slider::before { left:21px; }
+
+/* 愛犬プロフィール */
+.dog-profile-icon {
+  width:64px; height:64px; border-radius:50%;
+  background: linear-gradient(135deg, rgba(255,140,66,0.2), rgba(255,140,66,0.05));
+  border:2px solid rgba(255,140,66,0.3);
+  display:flex; align-items:center; justify-content:center; font-size:30px;
+  margin:0 auto 12px;
+}
+
+/* ================================================================
+   モーダル
+================================================================ */
+.modal-overlay {
+  position:fixed; inset:0; z-index:2000;
+  background:rgba(0,0,0,0.7); backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  display:none; align-items:center; justify-content:center; padding:20px;
+  animation:fadeIn 0.2s ease;
+}
+.modal-overlay.show { display:flex; }
+@keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
+.modal-box {
+  background: linear-gradient(145deg, #1e2330, #141820);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding:24px; width:100%; max-width:360px;
+  box-shadow: var(--shadow-lg);
+  animation: slideUp 0.25s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes slideUp {
+  from { transform:translateY(30px) scale(0.95); opacity:0; }
+  to   { transform:none; opacity:1; }
+}
+.modal-title { font-size:18px; font-weight:700; margin-bottom:16px; }
+.modal-row { display:flex; gap:8px; margin-top:16px; }
+
+/* 散歩完了モーダル */
+.result-stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0; }
+.result-stat { padding:14px; text-align:center; }
+.result-stat-val { font-size:26px; font-weight:800; color:var(--primary); }
+.result-stat-label { font-size:11px; color:var(--text-muted); margin-top:3px; }
+
+/* ================================================================
+   Leafletカスタマイズ
+================================================================ */
+.leaflet-control-attribution { font-size:9px !important; }
+.leaflet-bar a { background:rgba(20,24,35,0.92) !important; color:var(--text) !important; border-color:var(--border) !important; }
+.leaflet-bar a:hover { background:rgba(30,35,50,0.95) !important; }
+
+/* ================================================================
+   ユーティリティ
+================================================================ */
+.mt8  { margin-top:8px; }
+.mt12 { margin-top:12px; }
+.mt16 { margin-top:16px; }
+.mb8  { margin-bottom:8px; }
+.text-center { text-align:center; }
+.text-muted  { color:var(--text-muted); font-size:12px; }
+.empty-state { text-align:center; padding:40px 0; color:var(--text-muted); font-size:14px; }
+.empty-state .empty-icon { font-size:48px; margin-bottom:12px; opacity:0.5; }
+
+/* scrollbar */
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.15); border-radius:4px; }
+</style>
+</head>
+<body>
+
+<!-- 背景画像レイヤー -->
+<div class="bg-scene" aria-hidden="true"></div>
+
+<!-- ========== ホーム ========== -->
+<div id="screen-home" class="screen active">
+  <div class="home-header">
+    <div class="home-logo">🐾 わんポナビ</div>
+    <div class="home-sub">Dog Walk Navigator v2</div>
+  </div>
+
+  <!-- 時計 + 日付 -->
+  <div class="card clock-card mb8">
+    <div class="card-glow"></div>
+    <div>
+      <div class="clock-time" id="clock">--:--</div>
+      <div class="clock-date" id="date-display">----年--月--日</div>
+    </div>
+    <div id="next-walk-badge" style="text-align:right;font-size:11px;color:var(--text-muted);"></div>
+  </div>
+
+  <!-- 天気 -->
+  <div class="card weather-card mb8">
+    <div class="card-glow"></div>
+    <div class="weather-inner">
+      <div class="weather-row">
+        <div class="weather-icon-big" id="weather-icon">🌤️</div>
+        <div class="weather-info">
+          <div class="weather-temp" id="weather-temp">--°C</div>
+          <div class="weather-desc" id="weather-desc">読み込み中...</div>
+        </div>
+      </div>
+      <div class="weather-meta">
+        <div class="weather-meta-item">💧 <span id="weather-humidity">--%</span></div>
+        <div class="weather-meta-item">💨 <span id="weather-wind">--m/s</span></div>
+        <div class="weather-meta-item">☀️ UV <span id="weather-uv">--</span></div>
+        <div class="weather-meta-item">👁️ <span id="weather-vis">--km</span></div>
+      </div>
+      <div class="wbgt-bar wbgt-safe" id="wbgt-bar">
+        <span id="wbgt-icon">🐾</span>
+        <div>
+          <div id="wbgt-msg" style="font-size:13px;">快適なお散歩日和です!</div>
+          <div id="wbgt-sub" style="font-size:11px;opacity:0.7;margin-top:2px;">熱中症指数: 安全</div>
+        </div>
+        <div class="wbgt-val" id="wbgt-val">--°</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 犬キャラ -->
+  <div class="dog-hero">
+    <img src="./images/dog-character-transparent.png"
+         onerror="this.parentElement.innerHTML='<div class=dog-hero-emoji>🐕🦺</div>'" alt="わんこ">
+  </div>
+
+  <!-- スタート地点 -->
+  <p class="section-title">📍 スタート地点</p>
+  <div class="spot-select-wrap mb8">
+    <select id="spot-selector">
+      <option value="">-- スポットを選んでください --</option>
+    </select>
+    <span class="spot-select-arrow">▼</span>
+  </div>
+
+  <!-- 散歩時間 -->
+  <p class="section-title">⏱️ お散歩時間</p>
+  <div class="time-pills" id="time-selector">
+    <div class="time-pill" data-minutes="15">15分</div>
+    <div class="time-pill active" data-minutes="30">30分</div>
+    <div class="time-pill" data-minutes="45">45分</div>
+    <div class="time-pill" data-minutes="60">60分</div>
+  </div>
+
+  <button class="btn btn-primary" id="btn-suggest" disabled onclick="suggestRoutes()">
+    🗺️ ルートを提案してもらう
+  </button>
+  <button class="btn btn-free-walk mt8" id="btn-free-walk" disabled onclick="goFreeWalk()">
+    🐾 ルートなしでフリー散歩スタート
+  </button>
+  <p class="text-muted text-center mt8" id="home-hint">設定タブでスタート地点を登録してね</p>
+</div>
+
+<!-- ========== ルート選択 ========== -->
+<div id="screen-route" class="screen">
+  <p class="section-title">🗺️ ルートを選んでね</p>
+  <div id="route-cards">
+    <div class="route-loading">
+      <div class="spinner"></div>
+      <p>実際の道からルートを探しています...</p>
+    </div>
+  </div>
+  <button class="btn btn-secondary mt12" id="btn-go" disabled onclick="goWalk()">
+    🐾 このルートで散歩スタート!
+  </button>
+  <button class="btn btn-ghost mt8" onclick="suggestRoutes()">🔄 別のルートを提案</button>
+</div>
+
+<!-- ========== 散歩中 ========== -->
+<div id="screen-walk" class="screen">
+  <div id="walk-mode-badge" class="walk-mode-badge mode-route">🗺️ ルート散歩中</div>
+  <div class="walk-stats">
+    <div class="card walk-stat">
+      <div class="card-glow"></div>
+      <div class="walk-stat-val" id="walk-timer">00:00</div>
+      <div class="walk-stat-label">経過時間</div>
+    </div>
+    <div class="card walk-stat">
+      <div class="card-glow"></div>
+      <div class="walk-stat-val" id="walk-distance">0.0</div>
+      <div class="walk-stat-label">距離 (km)</div>
+    </div>
+  </div>
+  <div id="map"></div>
+  <div class="walk-action-row">
+    <button class="btn-pee" onclick="markToilet('pee')">💧 おしっこ</button>
+    <button class="btn-poo" onclick="markToilet('poo')">💩 うんち</button>
+    <button class="btn btn-ghost" style="flex:1;padding:14px 8px;font-size:13px;" onclick="openDogModal()">🐶 すれ違い</button>
+  </div>
+  <button class="btn-end mt8" onclick="endWalk()">⏹️ お散歩終了</button>
+
+  <p class="section-title mt12">📍 ルート沿いの見どころ</p>
+  <div class="card">
+    <div class="card-glow"></div>
+    <div class="card-body">
+      <div class="spots-scroll" id="spots-list-walk">
+        <div class="empty-state"><p>スポットを検索中...</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 健康タブ ========== -->
+<div id="screen-health" class="screen">
+  <p class="section-title">🏆 ストリーク</p>
+  <div class="card streak-banner mb8">
+    <div class="card-glow"></div>
+    <div class="streak-fire">🔥</div>
+    <div>
+      <div class="streak-count" id="streak-count">0</div>
+      <div class="streak-label">日連続散歩中!</div>
+    </div>
+    <div style="margin-left:auto;text-align:right;font-size:12px;color:var(--text-muted);">
+      今月 <span id="month-walks" style="color:var(--primary);font-weight:700;">0</span> 回
+    </div>
+  </div>
+
+  <p class="section-title">📅 今週の記録</p>
+  <div class="week-cal" id="week-cal"></div>
+
+  <p class="section-title">📊 トイレ記録(直近7日)</p>
+  <div class="card chart-wrap mb8">
+    <div class="card-glow"></div>
+    <canvas id="toilet-chart" height="120"></canvas>
+    <div id="last-poo-banner" class="last-poo-banner"></div>
+  </div>
+
+  <p class="section-title">🐾 ステータス</p>
+  <div class="health-grid">
+    <div class="card health-stat">
+      <div class="card-glow"></div>
+      <div class="health-stat-val" id="stat-total-walks">0</div>
+      <div class="health-stat-label">総散歩回数</div>
+    </div>
+    <div class="card health-stat">
+      <div class="card-glow"></div>
+      <div class="health-stat-val" id="stat-total-distance">0.0</div>
+      <div class="health-stat-label">総距離 (km)</div>
+    </div>
+    <div class="card health-stat">
+      <div class="card-glow"></div>
+      <div class="health-stat-val" id="stat-total-pee">0</div>
+      <div class="health-stat-label">おしっこ総数</div>
+    </div>
+    <div class="card health-stat">
+      <div class="card-glow"></div>
+      <div class="health-stat-val" id="stat-total-poo">0</div>
+      <div class="health-stat-label">うんち総数</div>
+    </div>
+  </div>
+
+  <!-- すれ違い犬の履歴 -->
+  <p class="section-title">🐶 すれ違い犬の履歴</p>
+  <div class="card mb8">
+    <div class="card-glow"></div>
+    <div class="card-body" id="dog-encounter-history">
+      <p class="text-muted">まだ記録がありません</p>
+    </div>
+  </div>
+
+  <p class="section-title">🏅 実績バッジ</p>
+  <div class="card">
+    <div class="card-glow"></div>
+    <div class="card-body">
+      <div class="badge-grid" id="achievement-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== ログ ========== -->
+<div id="screen-log" class="screen">
+  <div class="log-header-stats">
+    <div class="card log-stat-card">
+      <div class="card-glow"></div>
+      <div class="log-stat-val" id="log-stat-walks">0</div>
+      <div class="log-stat-label">総散歩回数</div>
+    </div>
+    <div class="card log-stat-card">
+      <div class="card-glow"></div>
+      <div class="log-stat-val" id="log-stat-distance">0.0</div>
+      <div class="log-stat-label">総距離 (km)</div>
+    </div>
+  </div>
+  <button class="btn btn-danger mb8" onclick="clearAllLogs()">🗑️ 全ログ削除</button>
+  <div id="log-list">
+    <div class="empty-state">
+      <div class="empty-icon">🐾</div>
+      <p>まだ散歩ログがありません<br>お散歩に行きましょう!</p>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 設定 ========== -->
+<div id="screen-settings" class="screen">
+
+  <!-- 愛犬プロフィール -->
+  <p class="section-title">🐕 愛犬プロフィール</p>
+  <div class="card settings-block mb8">
+    <div class="card-glow"></div>
+    <div class="settings-block-inner">
+      <div class="dog-profile-icon" id="dog-profile-icon">🐾</div>
+      <div class="float-field"><input type="text" id="dog-name" placeholder=" "><label>愛犬の名前</label></div>
+      <div class="float-field"><input type="text" id="dog-breed" placeholder=" "><label>犬種</label></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="float-field"><input type="number" id="dog-weight" placeholder=" " step="0.1"><label>体重 (kg)</label></div>
+        <div class="float-field"><input type="date" id="dog-birthday" placeholder=" "><label>誕生日</label></div>
+      </div>
+      <button class="btn btn-primary mt8" onclick="saveDogProfile()">💾 保存する</button>
+    </div>
+  </div>
+
+  <!-- スタート地点登録(地図タップ) -->
+  <p class="section-title">📍 スタート地点</p>
+  <div class="card settings-block mb8">
+    <div class="card-glow"></div>
+    <div class="settings-block-inner">
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">地図をタップしてピンを立て、地点を登録できます</p>
+      <div id="register-map"></div>
+      <div class="float-field"><input type="text" id="input-spot-name" placeholder=" "><label>スポット名(例: 自宅、公園前)</label></div>
+      <div class="float-field"><input type="text" id="input-spot-address" placeholder=" "><label>住所で検索(任意)</label></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" style="flex:1;" onclick="registerCurrentAsSpot()">📡 現在地を登録</button>
+        <button class="btn btn-primary" style="flex:1;" onclick="addSpotByAddress()">🔍 住所で登録</button>
+      </div>
+      <button class="btn btn-ghost mt8" onclick="addSpotFromMapPin()">📌 地図のピンで登録</button>
+      <div id="spots-list-settings" class="mt12"></div>
+    </div>
+  </div>
+
+  <!-- お気に入りルート -->
+  <p class="section-title">⭐ お気に入りルート</p>
+  <div class="card settings-block mb8">
+    <div class="card-glow"></div>
+    <div class="settings-block-inner">
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">散歩後の完了画面から登録できます。タップしてそのルートで散歩スタート。</p>
+      <div id="fav-routes-list"></div>
+    </div>
+  </div>
+
+  <!-- 散歩設定 -->
+  <p class="section-title">⚙️ 散歩設定</p>
+  <div class="card settings-block mb8">
+    <div class="card-glow"></div>
+    <div class="settings-block-inner">
+      <div class="toggle-row">
+        <span class="toggle-label">交通量の多い道を避ける</span>
+        <label class="toggle-switch"><input type="checkbox" id="setting-avoid-busy" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">公園・緑道を優先する</span>
+        <label class="toggle-switch"><input type="checkbox" id="setting-prefer-green" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">周回ルート(同じ道を通らない)</span>
+        <label class="toggle-switch"><input type="checkbox" id="setting-loop"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">水飲み場・トイレを経由する</span>
+        <label class="toggle-switch"><input type="checkbox" id="setting-water" checked><span class="toggle-slider"></span></label>
+      </div>
+    </div>
+  </div>
+
+  <!-- データ管理 -->
+  <p class="section-title">📦 データ管理</p>
+  <div class="card settings-block">
+    <div class="card-glow"></div>
+    <div class="settings-block-inner">
+      <button class="btn btn-danger" onclick="clearAllData()">🗑️ 全データ削除</button>
+      <p class="text-muted text-center mt8">散歩ログ・登録地点・設定が全て削除されます</p>
+    </div>
+  </div>
+</div>
+
+<!-- ========== すれ違い犬 モーダル ========== -->
+<div class="modal-overlay" id="dog-modal">
+  <div class="modal-box">
+    <div class="modal-title">🐶 すれ違った犬</div>
+    <div class="float-field">
+      <input type="text" id="input-dog-breed-enc" placeholder=" ">
+      <label>犬種メモ(例: 柴犬、トイプードル)</label>
+    </div>
+    <div class="modal-row">
+      <button class="btn btn-ghost" style="flex:1;" onclick="closeDogModal()">キャンセル</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="addDogEncounter()">追加!</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 散歩完了 モーダル ========== -->
+<div class="modal-overlay" id="result-modal">
+  <div class="modal-box">
+    <div class="modal-title" style="text-align:center;font-size:22px;">🎉 お散歩おつかれさま!</div>
+    <div class="result-stat-grid" id="result-grid"></div>
+    <div id="result-achievements" style="margin-bottom:12px;"></div>
+    <button class="btn btn-fav mt8" id="btn-save-fav" style="display:none;">⭐ このルートをお気に入りに登録</button>
+    <button class="btn btn-primary mt8" onclick="closeResultModal()">ホームへ戻る</button>
+  </div>
+</div>
+
+<!-- ========== ボトムナビ ========== -->
+<nav class="bottom-nav">
+  <button class="nav-item active" onclick="showScreen('home')">
+    <span class="nav-icon">🏠</span><span>ホーム</span>
+  </button>
+  <button class="nav-item" onclick="showScreen('route')">
+    <span class="nav-icon">🗺️</span><span>ルート</span>
+  </button>
+  <button class="nav-item" onclick="showScreen('health')">
+    <span class="nav-icon">🏆</span><span>健康</span>
+  </button>
+  <button class="nav-item" onclick="showScreen('log')">
+    <span class="nav-icon">📊</span><span>ログ</span>
+  </button>
+  <button class="nav-item" onclick="showScreen('settings')">
+    <span class="nav-icon">⚙️</span><span>設定</span>
+  </button>
+</nav>
+
+<script src="./js/storage.js"></script>
+<script src="./js/weather.js"></script>
+<script src="./js/map.js"></script>
+<script src="./js/walk.js"></script>
+<script src="./js/health.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>
