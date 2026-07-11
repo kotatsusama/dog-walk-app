@@ -231,8 +231,10 @@ out body 5;`;
 function calcAdjustScale(actualDistance, targetMinutes) {
   const targetDist = targetMinutes * WALK_SPEED;
   const ratio      = actualDistance / targetDist;
-  if (ratio > 1.15) return 1 / ratio;   // 長すぎ → 縮小
-  if (ratio < 0.85) return 1 / ratio;   // 短すぎ → 拡大
+  if (ratio > 1.15 || ratio < 0.85) {
+    // 目標距離 / 実距離 の比率でwaypoint距離をスケール
+    return targetDist / actualDistance;
+  }
   return null; // ±15%以内なら調整不要
 }
 
@@ -460,36 +462,51 @@ async function suggestRoutes() {
   const settings = getSettings();
   const targetDistM = mins * WALK_SPEED;
 
-  // preferGreen: 近くの公園・緑道・川沿いエリアを取得してルート方向バイアスに使う
-  let nearbyParks = [];
-  if (settings.preferGreen) {
-    try {
-      const parkQ = `[out:json][timeout:10];
+  // Overpassを1回だけ呼んで全データを取得(park/water/spots を統合)
+  const overpassRadius = Math.min(targetDistM, 3000);
+  const limit = heatLevel >= 2 ? 40 : 30;
+  const unifiedQ = `[out:json][timeout:20];
 (
-  node["leisure"~"park|garden|dog_park"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
-  node["natural"~"wood"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
-  node["waterway"~"river|stream|canal"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
-  node["natural"="water"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
-  way["waterway"~"river|stream|canal"](around:${targetDistM},${startLoc.lat},${startLoc.lng});
+  node["amenity"="drinking_water"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
+  node["amenity"="toilets"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
+  node["amenity"~"fountain"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
+  node["amenity"~"cafe|restaurant|ice_cream"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
+  node["amenity"~"place_of_worship"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
+  node["leisure"~"dog_park|park|garden|playground"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
+  node["natural"~"wood|tree_row|water"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
+  node["tourism"~"attraction|viewpoint|artwork"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
+  node["historic"~"monument|memorial|wayside_shrine"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
+  node["waterway"~"river|stream|canal"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
+  node["dog"~"yes|leashed"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
+  node["shop"~"bakery|convenience"](around:${overpassRadius},${startLoc.lat},${startLoc.lng});
 );
-out center body 15;`;
-      const parkRes  = await fetch('https://overpass-api.de/api/interpreter', {
-        method: 'POST', body: 'data=' + encodeURIComponent(parkQ),
-      });
-      const parkData = await parkRes.json();
-      nearbyParks = (parkData.elements || [])
-        .map(el => ({
-          lat: el.lat ?? el.center?.lat,
-          lng: el.lon ?? el.center?.lon,
-        }))
-        .filter(p => p.lat != null && p.lng != null);
-    } catch(e) { nearbyParks = []; }
-  }
+out body ${limit};`;
 
-  // water: 近くの水飲み場を取得
+  let allElements = [];
+  try {
+    const res  = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST', body: 'data=' + encodeURIComponent(unifiedQ),
+    });
+    const data = await res.json();
+    allElements = data.elements || [];
+  } catch(e) { allElements = []; }
+
+  // preferGreen用: 公園・水辺のノード座標
+  const nearbyParks = settings.preferGreen
+    ? allElements
+        .filter(el => el.tags?.leisure || el.tags?.waterway || el.tags?.natural === 'water' || el.tags?.natural === 'wood')
+        .map(el => ({ lat: el.lat, lng: el.lon }))
+        .filter(p => p.lat && p.lng)
+    : [];
+
+  // water用: 最寄り水飲み場
   let waterPoint = null;
   if (settings.water) {
-    waterPoint = await fetchNearestWaterPoint(startLoc.lat, startLoc.lng, targetDistM * 0.7);
+    const waterEls = allElements
+      .filter(el => el.tags?.amenity === 'drinking_water' || el.tags?.amenity === 'fountain')
+      .map(el => ({ lat: el.lat, lng: el.lon, dist: calcDistance(startLoc.lat, startLoc.lng, el.lat, el.lon) }))
+      .sort((a, b) => a.dist - b.dist);
+    if (waterEls.length) waterPoint = waterEls[0];
   }
 
   // 補正付きルート取得(設定を反映)
@@ -515,14 +532,32 @@ out center body 15;`;
     return;
   }
 
-  // スポット取得: 暑い時は水飲み場・日陰スポットを優先
-  const radius = Math.min(mins * 45, 2800);
-  const spots  = await fetchSpots(startLoc.lat, startLoc.lng, radius, heatLevel >= 2);
+  // allElementsからスポットを生成(追加のOverpassリクエスト不要)
+  const spots = allElements
+    .map(el => ({
+      name: el.tags?.name || el.tags?.['name:ja'] || getSpotTypeName(el.tags),
+      lat:  el.lat,
+      lng:  el.lon,
+      icon: getSpotIcon(el.tags),
+      type: getSpotTypeName(el.tags),
+      dog:  el.tags?.dog === 'yes' || el.tags?.dog === 'leashed',
+      hours: el.tags?.opening_hours || null,
+    }))
+    .filter(s => s.lat && s.lng);
 
   generatedRoutes.forEach(route => {
+    if (!route.points?.length) { route.spots = []; return; }
+    // ルートのバウンディングボックスを計算
+    const lats = route.points.map(p => p[0]);
+    const lngs = route.points.map(p => p[1]);
+    const minLat = Math.min(...lats) - 0.005;
+    const maxLat = Math.max(...lats) + 0.005;
+    const minLng = Math.min(...lngs) - 0.007;
+    const maxLng = Math.max(...lngs) + 0.007;
     route.spots = spots.filter(s =>
-      route.points.some(p => calcDistance(p[0], p[1], s.lat, s.lng) < 350)
-    ).slice(0, 5);
+      s.lat >= minLat && s.lat <= maxLat &&
+      s.lng >= minLng && s.lng <= maxLng
+    ).slice(0, 6);
   });
 
   renderRouteCards(startLoc, type, wdata);
